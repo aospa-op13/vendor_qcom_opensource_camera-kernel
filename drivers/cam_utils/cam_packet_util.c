@@ -62,6 +62,9 @@ int cam_packet_util_validate_cmd_desc(struct cam_cmd_buf_desc *cmd_desc)
 
 	return 0;
 }
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_packet_util_validate_cmd_desc);
+#endif
 
 int cam_packet_util_validate_packet(struct cam_packet *packet,
 	size_t remain_len)
@@ -105,6 +108,9 @@ int cam_packet_util_validate_packet(struct cam_packet *packet,
 
 	return 0;
 }
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_packet_util_validate_packet);
+#endif
 
 int cam_packet_util_copy_pkt_to_kmd(struct cam_packet *packet_u, struct cam_packet **packet,
 		size_t remain_len)
@@ -211,7 +217,6 @@ int cam_packet_util_get_kmd_buffer(struct cam_packet *packet,
 	kmd_buf->offset     = cmd_desc->offset + packet->kmd_cmd_buf_offset;
 	kmd_buf->size       = cmd_desc->size - cmd_desc->length;
 	kmd_buf->used_bytes = 0;
-	return rc;
 
 rel_kmd_buf:
 	cam_mem_put_cpu_buf(cmd_desc->mem_handle);

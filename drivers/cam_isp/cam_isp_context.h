@@ -427,6 +427,8 @@ struct cam_isp_fcg_prediction_tracker {
  *                             by other devices on the link as part of link setup
  * @mode_switch_en:            Indicates if mode switch is enabled
  * @sfe_en:                    Indicates if SFE is being used
+ * @last_apply_settings:       Indicates last applied settings is default or valid req setting
+ *                             true is default and false is valid
  *
  */
 struct cam_isp_context {
@@ -496,6 +498,7 @@ struct cam_isp_context {
 	bool                                  mode_switch_en;
 	bool                                  sfe_en;
 	bool                                  standby_en;
+	bool                                  last_apply_settings;
 };
 
 /**
