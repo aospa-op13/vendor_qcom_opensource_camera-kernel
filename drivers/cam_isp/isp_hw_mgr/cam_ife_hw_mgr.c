@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/slab.h>
@@ -4235,6 +4235,10 @@ static int cam_ife_hw_mgr_acquire_csid_hw(
 		if (!ife_hw_mgr->csid_devices[i])
 			continue;
 
+		if (ife_hw_mgr->debug_cfg.force_acq_csid < CAM_IFE_CSID_HW_NUM_MAX &&
+			(i != ife_hw_mgr->debug_cfg.force_acq_csid))
+			continue;
+
 		hw_intf = ife_hw_mgr->csid_devices[i];
 
 		if (ife_hw_mgr->csid_hw_caps[hw_intf->hw_idx].is_lite &&
@@ -5737,8 +5741,8 @@ void cam_ife_cam_cdm_callback(uint32_t handle, void *userdata,
 		ctx->last_cdm_done_req = req_id;
 		CAM_DBG(CAM_ISP,
 			"CDM hdl=0x%x, udata=%pK, status=%d, cookie=%u ctx_index=%u cdm_req=%llu",
-			 handle, userdata, status, req_id, ctx->ctx_index,
-			 ctx->cdm_userdata.request_id);
+			handle, userdata, status, req_id, ctx->ctx_index,
+			ctx->cdm_userdata.request_id);
 	} else if (status == CAM_CDM_CB_STATUS_PAGEFAULT) {
 		if (ctx->common.sec_pf_evt_cb)
 			ctx->common.sec_pf_evt_cb(ctx->common.cb_priv, cookie);
@@ -7923,11 +7927,11 @@ skip_bw_clk_update:
 		cdm_cmd->cookie            = cfg->request_id;
 		cdm_cmd->gen_irq_arb       = false;
 		cdm_cmd->genirq_buff       = &hw_update_data->kmd_cmd_buff_info;
+		cdm_cmd->flag              = wait_for_cdm;
+		cdm_cmd->fast_complete     = NULL;
 
 		if (wait_for_cdm)
-			cdm_cmd->flag              = true;
-		else
-			cdm_cmd->flag              = false;
+			cdm_cmd->fast_complete = &ctx->config_done_complete;
 
 		for (i = 0 ; i < cfg->num_hw_update_entries; i++) {
 			cmd = (cfg->hw_update_entries + i);
@@ -8089,6 +8093,18 @@ skip_bw_clk_update:
 						ctx->ctx_index);
 				}
 			} else {
+				/**
+				 * When MCTFE waits for CDM completion and fast callback is
+				 * enabled, update related fields here instead of CDM callback
+				 * to avoid potential delays between top half and bottom half
+				 */
+				if (cdm_cmd->fast_complete) {
+					ctx->last_cdm_done_req = cdm_cmd->cookie;
+					atomic_set(&ctx->cdm_done, 1);
+
+					ktime_get_clocktai_ts64(&ctx->cdm_done_ts);
+				}
+
 				CAM_DBG(CAM_ISP,
 					"config done Success for req_id=%llu ctx_index %u",
 					cfg->request_id, ctx->ctx_index);
@@ -17883,6 +17899,33 @@ DEFINE_DEBUGFS_ATTRIBUTE(cam_ife_csid_rx_capture_debug,
 	cam_ife_get_csid_rx_pkt_capture_debug,
 	cam_ife_set_csid_rx_pkt_capture_debug, "%16llu");
 
+static int cam_ife_set_force_acq_csid(void *data, u64 val)
+{
+	if (val > CAM_IFE_CSID_HW_NUM_MAX) {
+		CAM_WARN(CAM_ISP, "Invalid force_acq_csid value :%lld", val);
+		g_ife_hw_mgr.debug_cfg.force_acq_csid = CAM_IFE_CSID_HW_NUM_MAX;
+		return 0;
+	}
+
+	g_ife_hw_mgr.debug_cfg.force_acq_csid = (uint32_t)val;
+	CAM_INFO(CAM_ISP, "Set force_acq_csid value :%lld", val);
+	return 0;
+}
+
+static int cam_ife_get_force_acq_csid(void *data, u64 *val)
+{
+	*val = (uint64_t)g_ife_hw_mgr.debug_cfg.force_acq_csid;
+	CAM_INFO(CAM_ISP,
+		"Set camif force_acq_csid value :%lld",
+		g_ife_hw_mgr.debug_cfg.force_acq_csid);
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(cam_ife_force_acq_csid,
+	cam_ife_get_force_acq_csid,
+	cam_ife_set_force_acq_csid, "%16llu");
+
 #ifdef CONFIG_CAM_TEST_IRQ_LINE
 static int __cam_ife_mgr_test_irq_line(struct cam_hw_intf *hw_intf, int *n_intf, int *n_success,
 	const char *hw_name, int idx)
@@ -18789,6 +18832,10 @@ static int cam_ife_hw_mgr_debug_register(void)
 	debugfs_create_bool("enable_cdr_sweep_debug", 0644,
 		g_ife_hw_mgr.debug_cfg.dentry,
 		&g_ife_hw_mgr.debug_cfg.enable_cdr_sweep_debug);
+	debugfs_create_u32("force_acq_csid", 0644,
+		g_ife_hw_mgr.debug_cfg.dentry,
+		&g_ife_hw_mgr.debug_cfg.force_acq_csid);
+
 end:
 	g_ife_hw_mgr.debug_cfg.enable_csid_recovery = 1;
 	return rc;
@@ -19370,6 +19417,8 @@ int cam_ife_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl,
 
 	if (iommu_hdl)
 		*iommu_hdl = g_ife_hw_mgr.mgr_common.img_iommu_hdl;
+
+	g_ife_hw_mgr.debug_cfg.force_acq_csid = CAM_IFE_CSID_HW_NUM_MAX;
 
 	cam_ife_hw_mgr_debug_register();
 	cam_ife_mgr_count_functional_ife();
