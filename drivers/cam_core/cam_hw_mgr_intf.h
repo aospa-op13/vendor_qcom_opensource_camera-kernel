@@ -308,9 +308,7 @@ struct cam_hw_prepare_update_args {
 	void                           *priv;
 	struct list_head                   *buf_tracker;
 	struct cam_hw_mgr_pf_request_info  *pf_data;
-#ifdef OPLUS_FEATURE_CAMERA_COMMON
-	uint32_t                        init_pending_req_cnt;
-#endif /* OPLUS_FEATURE_CAMERA_COMMON */
+	uint32_t                            init_pending_req_cnt;
 };
 
 /**
