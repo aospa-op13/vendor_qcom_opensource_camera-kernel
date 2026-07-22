@@ -2636,15 +2636,6 @@ int cam_smmu_release_buf_region(enum cam_smmu_region_id region,
 }
 EXPORT_SYMBOL(cam_smmu_release_buf_region);
 
-static int cam_smmu_util_return_map_entry(struct cam_smmu_buffer_tracker *entry)
-{
-	spin_lock_bh(&iommu_cb_set.s_lock);
-	list_add_tail(&entry->list, &iommu_cb_set.buf_tracker_free_list);
-	spin_unlock_bh(&iommu_cb_set.s_lock);
-
-	return 0;
-}
-
 void cam_smmu_buffer_tracker_putref(struct list_head *track_list)
 {
 	struct cam_smmu_buffer_tracker *buffer_tracker, *temp;
@@ -2687,8 +2678,6 @@ void cam_smmu_buffer_tracker_putref(struct list_head *track_list)
 
 #ifdef OPLUS_FEATURE_CAMERA_COMMON
 		list_add_tail(&buffer_tracker->list, &iommu_cb_set.buf_tracker_free_list);
-#else
-		cam_smmu_util_return_map_entry(buffer_tracker);
 #endif
 
 	}
@@ -3038,7 +3027,9 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 
 	mapping_info->buf = NULL;
 
+	spin_lock_bh(&iommu_cb_set.s_lock);
 	list_del_init(&mapping_info->list);
+	spin_unlock_bh(&iommu_cb_set.s_lock);
 
 	/* free one buffer */
 	CAM_MEM_FREE(mapping_info);
@@ -3433,7 +3424,10 @@ static int cam_smmu_free_scratch_buffer_remove_from_list(
 			get_order(mapping_info->phys_len));
 	sg_free_table(mapping_info->table);
 	CAM_MEM_FREE(mapping_info->table);
+
+	spin_lock_bh(&iommu_cb_set.s_lock);
 	list_del_init(&mapping_info->list);
+	spin_unlock_bh(&iommu_cb_set.s_lock);
 
 	CAM_MEM_FREE(mapping_info);
 	mapping_info = NULL;
@@ -3781,7 +3775,9 @@ static int cam_smmu_secure_unmap_buf_and_remove_from_list(
 	dma_buf_detach(mapping_info->buf, mapping_info->attach);
 	mapping_info->buf = NULL;
 
+	spin_lock_bh(&iommu_cb_set.s_lock);
 	list_del_init(&mapping_info->list);
+	spin_unlock_bh(&iommu_cb_set.s_lock);
 
 	CAM_DBG(CAM_SMMU, "unmap fd: %d, i_ino : %lu, idx : %d",
 		mapping_info->ion_fd, mapping_info->i_ino, idx);
@@ -3932,10 +3928,10 @@ void cam_smmu_buffer_tracker_buffer_putref(struct cam_smmu_buffer_tracker *entry
 			"[SMMU_BT] kref_count after put, [fd: 0x%x ino: 0x%x cb: %s], count: %d",
 			entry->ion_fd, entry->i_ino, entry->cb_name, kref_read(entry->ref_count));
 
-
+	spin_lock_bh(&iommu_cb_set.s_lock);
 	list_del_init(&entry->list);
-
-	cam_smmu_util_return_map_entry(entry);
+	list_add_tail(&entry->list, &iommu_cb_set.buf_tracker_free_list);
+	spin_unlock_bh(&iommu_cb_set.s_lock);
 
 }
 
