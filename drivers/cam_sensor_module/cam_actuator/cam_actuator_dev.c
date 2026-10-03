@@ -13,6 +13,11 @@
 #include "cam_compat.h"
 #include "cam_mem_mgr_api.h"
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#include "cam_compat.h"
+static bool gProbe_done;
+#endif
+
 static struct cam_i3c_actuator_data {
 	struct cam_actuator_ctrl_t                  *a_ctrl;
 	struct completion                            probe_complete;
@@ -62,6 +67,10 @@ static long cam_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 	struct cam_actuator_ctrl_t *a_ctrl =
 		v4l2_get_subdevdata(sd);
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	mutex_lock(&(a_ctrl->actuator_ioctl_mutex));
+#endif
+
 	switch (cmd) {
 	case VIDIOC_CAM_CONTROL:
 		rc = cam_actuator_driver_cmd(a_ctrl, arg);
@@ -78,6 +87,9 @@ static long cam_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 	case CAM_SD_SHUTDOWN:
 		if (!cam_req_mgr_is_shutdown()) {
 			CAM_ERR(CAM_CORE, "SD shouldn't come from user space");
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+			mutex_unlock(&(a_ctrl->actuator_ioctl_mutex));
+#endif
 			return 0;
 		}
 
@@ -88,6 +100,9 @@ static long cam_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 		rc = -ENOIOCTLCMD;
 		break;
 	}
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	mutex_unlock(&(a_ctrl->actuator_ioctl_mutex));
+#endif
 	return rc;
 }
 
@@ -136,21 +151,38 @@ static long cam_actuator_init_subdev_do_ioctl(struct v4l2_subdev *sd,
 }
 #endif
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+struct v4l2_subdev_core_ops cam_actuator_subdev_core_ops = {
+#else
 static struct v4l2_subdev_core_ops cam_actuator_subdev_core_ops = {
+#endif
 	.ioctl = cam_actuator_subdev_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl32 = cam_actuator_init_subdev_do_ioctl,
 #endif
 };
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_actuator_subdev_core_ops);
+#endif
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
 static struct v4l2_subdev_ops cam_actuator_subdev_ops = {
+#else
+static const struct v4l2_subdev_ops cam_actuator_subdev_ops = {
+#endif
 	.core = &cam_actuator_subdev_core_ops,
 };
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+struct v4l2_subdev_internal_ops cam_actuator_internal_ops = {
+#else
 static const struct v4l2_subdev_internal_ops cam_actuator_internal_ops = {
+#endif
 	.close = cam_actuator_subdev_close,
 };
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_actuator_internal_ops);
+#endif
 static int cam_actuator_init_subdev(struct cam_actuator_ctrl_t *a_ctrl)
 {
 	int rc = 0;
@@ -568,6 +600,10 @@ static int32_t cam_actuator_driver_platform_probe(
 	if (rc)
 		CAM_ERR(CAM_ACTUATOR, "failed to add component rc: %d", rc);
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		gProbe_done = true;
+#endif
+
 	return rc;
 }
 
@@ -760,6 +796,11 @@ int cam_actuator_driver_init(void)
 	struct device_node                      *dev;
 	int num_entries = 0;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		void *drv_ptr = NULL;
+		gProbe_done = false;
+#endif
+
 	rc = platform_driver_register(&cam_actuator_platform_driver);
 	if (rc < 0) {
 		CAM_ERR(CAM_ACTUATOR,
@@ -803,6 +844,14 @@ i3c_register_err:
 	i2c_del_driver(&cam_actuator_i2c_driver);
 i2c_register_err:
 	platform_driver_unregister(&cam_actuator_platform_driver);
+
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		if (gProbe_done == false) {
+			CAM_ERR(CAM_SENSOR, "%s deferred probe", cam_actuator_platform_driver.driver.name);
+			drv_ptr = (void*)&(cam_actuator_platform_driver.driver);
+			dev_defer_supplier_debug(drv_ptr);
+		}
+#endif
 
 	return rc;
 }

@@ -40,6 +40,14 @@
 #define CSIPHY_VERSION_V230                       0x230
 #define CSIPHY_VERSION_V240                       0x240
 #define CSIPHY_VERSION_V241                       0x241
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#define CSIPHY_VERSION_V230_DODGE_TELE           0xF231
+#define CSIPHY_VERSION_V230_DODGE_ULTRAWIDE      0xF232
+#define CSIPHY_VERSION_V230_HUMMER_MAIN          0xF234
+#define CSIPHY_VERSION_V230_PAGANI_FRONT         0xF23D
+#define CSIPHY_VERSION_V230_PAGANI_MAIN          0xF23E
+#define CSIPHY_VERSION_V230_KTM_MAIN             0xF240
+#endif
 
 /**
  * @csiphy_dev: CSIPhy device structure

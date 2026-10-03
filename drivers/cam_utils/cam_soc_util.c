@@ -3269,7 +3269,14 @@ int cam_soc_util_get_dt_properties(struct cam_hw_soc_info *soc_info)
 
 	if (of_find_property(of_node, "qcom,cam-cx-ipeak", NULL))
 		rc = cam_cx_ipeak_register_cx_ipeak(soc_info);
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	if(!of_property_read_u32(of_node, "iic-freq-mode", &soc_info->i2c_freq_mode)){
+		CAM_INFO(CAM_UTIL, "iic-freq-mode found %u",soc_info->i2c_freq_mode);
+	}
+	else {
+		soc_info->i2c_freq_mode = 0xFF;
+	}
+#endif
 #ifdef CONFIG_SPECTRA_VMRM
 	num_vmrm_resource_ids = of_property_count_u32_elems(of_node, "vmrm-resource-ids");
 
@@ -3290,7 +3297,9 @@ int cam_soc_util_get_dt_properties(struct cam_hw_soc_info *soc_info)
 #endif
 	return rc;
 }
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_soc_util_get_dt_properties);
+#endif
 /**
  * cam_soc_util_get_regulator()
  *
@@ -3328,6 +3337,8 @@ int cam_soc_util_regulator_disable(struct regulator *rgltr,
 		return -EINVAL;
 	}
 
+	CAM_INFO(CAM_UTIL, "[%s] voltage disable", rgltr_name);
+
 	rc = cam_wrapper_regulator_disable(rgltr, rgltr_name);
 	if (rc) {
 		CAM_ERR(CAM_UTIL, "%s regulator disable failed", rgltr_name);
@@ -3362,7 +3373,7 @@ int cam_soc_util_regulator_enable(struct regulator *rgltr,
 	}
 
 	if (cam_wrapper_regulator_count_voltages(rgltr, rgltr_name) > 0) {
-		CAM_DBG(CAM_UTIL, "[%s] voltage min=%d, max=%d",
+		CAM_INFO(CAM_UTIL, "[%s] voltage min=%d, max=%d",
 			rgltr_name, rgltr_min_volt, rgltr_max_volt);
 
 		rc = cam_wrapper_regulator_set_voltage(
@@ -3634,7 +3645,7 @@ static int cam_soc_util_regulator_enable_default(
 	}
 
 	for (j = 0; j < num_rgltr; j++) {
-		CAM_DBG(CAM_UTIL, "[%s] : start regulator %s enable, rgltr_ctrl_support %d",
+		CAM_INFO(CAM_UTIL, "[%s] : start regulator %s enable, rgltr_ctrl_support %d",
 			soc_info->dev_name, soc_info->rgltr_name[j], soc_info->rgltr_ctrl_support);
 		if (soc_info->rgltr_ctrl_support == true) {
 			rc = cam_soc_util_regulator_enable(soc_info->rgltr[j],

@@ -12,7 +12,10 @@
 #include "camera_main.h"
 #include "cam_compat.h"
 #include "cam_mem_mgr_api.h"
-
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#include "cam_compat.h"
+static bool gProbe_done;
+#endif
 static struct cam_i3c_eeprom_data {
 	struct cam_eeprom_ctrl_t                  *e_ctrl;
 	struct completion                          probe_complete;
@@ -99,7 +102,17 @@ int32_t cam_eeprom_update_i2c_info(struct cam_eeprom_ctrl_t *e_ctrl,
 		cci_client->sid = (i2c_info->slave_addr) >> 1;
 		cci_client->retries = 3;
 		cci_client->id_map = 0;
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		if(e_ctrl->soc_info.i2c_freq_mode != 0xFF){
+			cci_client->i2c_freq_mode = e_ctrl->soc_info.i2c_freq_mode;
+			CAM_INFO(CAM_EEPROM, "iic-freq-mode override as %d ",cci_client->i2c_freq_mode);
+		}
+		else{
+			cci_client->i2c_freq_mode = i2c_info->i2c_freq_mode;
+		}
+#else
 		cci_client->i2c_freq_mode = i2c_info->i2c_freq_mode;
+#endif
 	} else if (e_ctrl->io_master_info.master_type == I2C_MASTER) {
 		if (!e_ctrl->io_master_info.qup_client) {
 			CAM_ERR(CAM_EEPROM, "failed: qup_client %pK",
@@ -163,12 +176,19 @@ static const struct v4l2_subdev_internal_ops cam_eeprom_internal_ops = {
 	.close = cam_eeprom_subdev_close,
 };
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+struct v4l2_subdev_core_ops cam_eeprom_subdev_core_ops = {
+#else
 static struct v4l2_subdev_core_ops cam_eeprom_subdev_core_ops = {
+#endif
 	.ioctl = cam_eeprom_subdev_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl32 = cam_eeprom_init_subdev_do_ioctl,
 #endif
 };
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_eeprom_subdev_core_ops);
+#endif
 
 static struct v4l2_subdev_ops cam_eeprom_subdev_ops = {
 	.core = &cam_eeprom_subdev_core_ops,
@@ -662,6 +682,10 @@ static int32_t cam_eeprom_platform_driver_probe(
 	if (rc)
 		CAM_ERR(CAM_EEPROM, "failed to add component rc: %d", rc);
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		gProbe_done = true;
+#endif
+
 	return rc;
 }
 
@@ -876,6 +900,11 @@ int cam_eeprom_driver_init(void)
 	struct device_node                      *dev;
 	int num_entries = 0;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		void *drv_ptr = NULL;
+		gProbe_done = false;
+#endif
+
 	rc = platform_driver_register(&cam_eeprom_platform_driver);
 	if (rc < 0) {
 		CAM_ERR(CAM_EEPROM, "platform_driver_register failed rc = %d",
@@ -894,6 +923,14 @@ int cam_eeprom_driver_init(void)
 		CAM_ERR(CAM_EEPROM, "i2c_add_driver failed rc = %d", rc);
 		goto i2c_register_err;
 	}
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		if (gProbe_done == false) {
+			CAM_ERR(CAM_SENSOR, "%s deferred probe", cam_eeprom_platform_driver.driver.name);
+			drv_ptr = (void*)&(cam_eeprom_platform_driver.driver);
+			dev_defer_supplier_debug(drv_ptr);
+		}
+#endif
+
 
 	memset(eeprom_i3c_id, 0, sizeof(struct i3c_device_id) * (MAX_I3C_DEVICE_ID_ENTRIES + 1));
 

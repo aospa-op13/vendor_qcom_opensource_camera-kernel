@@ -12,6 +12,11 @@
 #include "cam_compat.h"
 #include "cam_mem_mgr_api.h"
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+#include "cam_compat.h"
+static bool gProbe_done;
+#endif
+
 static struct cam_sensor_i3c_sensor_data {
 	struct cam_sensor_ctrl_t                  *s_ctrl;
 	struct completion                          probe_complete;
@@ -128,13 +133,20 @@ static long cam_sensor_init_subdev_do_ioctl(struct v4l2_subdev *sd,
 }
 
 #endif
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+struct v4l2_subdev_core_ops cam_sensor_subdev_core_ops = {
+#else
 static struct v4l2_subdev_core_ops cam_sensor_subdev_core_ops = {
+#endif
 	.ioctl = cam_sensor_subdev_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl32 = cam_sensor_init_subdev_do_ioctl,
 #endif
 	.s_power = cam_sensor_power,
 };
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+EXPORT_SYMBOL(cam_sensor_subdev_core_ops);
+#endif
 
 static struct v4l2_subdev_ops cam_sensor_subdev_ops = {
 	.core = &cam_sensor_subdev_core_ops,
@@ -405,6 +417,19 @@ static int cam_sensor_i2c_component_bind(struct device *dev,
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.reg_bank_unlock_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.reg_bank_lock_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.read_settings.list_head));
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.resolution_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.lsc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.qsc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.awbotp_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.spc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.pdc_settings.list_head));
+	mutex_init(&(s_ctrl->sensor_power_state_mutex));
+	mutex_init(&(s_ctrl->sensor_initsetting_mutex));
+	s_ctrl->sensor_power_state = CAM_SENSOR_POWER_OFF;
+	s_ctrl->sensor_initsetting_state = CAM_SENSOR_SETTING_WRITE_INVALID;
+	s_ctrl->sensor_qsc_setting.qscsetting_state = CAM_SENSOR_SETTING_WRITE_INVALID;
+#endif
 
 	for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
 		INIT_LIST_HEAD(&(s_ctrl->i2c_data.deferred_frame_update[i].list_head));
@@ -646,6 +671,19 @@ static int cam_sensor_component_bind(struct device *dev,
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.reg_bank_lock_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.read_settings.list_head));
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.resolution_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.lsc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.qsc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.awbotp_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.spc_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.pdc_settings.list_head));
+	mutex_init(&(s_ctrl->sensor_power_state_mutex));
+	mutex_init(&(s_ctrl->sensor_initsetting_mutex));
+	s_ctrl->sensor_power_state = CAM_SENSOR_POWER_OFF;
+	s_ctrl->sensor_initsetting_state = CAM_SENSOR_SETTING_WRITE_INVALID;
+#endif
+
 	for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
 		INIT_LIST_HEAD(&(s_ctrl->i2c_data.deferred_frame_update[i].list_head));
 		INIT_LIST_HEAD(&(s_ctrl->i2c_data.per_frame[i].list_head));
@@ -762,6 +800,10 @@ static int32_t cam_sensor_driver_platform_probe(
 	if (rc)
 		CAM_ERR(CAM_SENSOR, "failed to add component rc: %d", rc);
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		gProbe_done = true;
+#endif
+
 	return rc;
 }
 
@@ -819,6 +861,11 @@ int cam_sensor_driver_init(void)
 	struct device_node                      *dev;
 	int num_entries = 0;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		void *drv_ptr = NULL;
+		gProbe_done = false;
+#endif
+
 	rc = platform_driver_register(&cam_sensor_platform_driver);
 	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "platform_driver_register Failed: rc = %d", rc);
@@ -863,6 +910,14 @@ i3c_register_err:
 	i2c_del_driver(&cam_sensor_i2c_driver);
 i2c_register_err:
 	platform_driver_unregister(&cam_sensor_platform_driver);
+
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		if (gProbe_done == false) {
+			CAM_ERR(CAM_SENSOR, "%s deferred probe", cam_sensor_platform_driver.driver.name);
+			drv_ptr = (void*)&(cam_sensor_platform_driver.driver);
+			dev_defer_supplier_debug(drv_ptr);
+		}
+#endif
 
 	return rc;
 }
